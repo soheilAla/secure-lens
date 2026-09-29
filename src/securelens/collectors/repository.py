@@ -9,26 +9,26 @@ class RepositoryCollector:
     def collect(self, root: str) -> RepositorySnapshot:
         root_path = Path(root).resolve()
 
-        files = []
+        collected = []
         skipped = []
 
         for path in root_path.rglob("*"):
             if not path.is_file():
                 continue
             if should_skip(path):
-                skipped.append(path)
+                skipped.append(str(path))
                 continue
 
             content = read_file(path)
 
             if content is None:
-                skipped.append(path)
+                skipped.append(str(path))
                 continue
 
-            files.append(
+            collected.append(
                 FileTarget(path=str(path.relative_to(root_path)), content=content)
             )
 
         return RepositorySnapshot(
-            root=str(root_path), files=files, skipped_files=skipped
+            root=str(root_path), collected_files=collected, skipped_files=skipped
         )

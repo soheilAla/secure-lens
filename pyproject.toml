@@ -1,5 +1,5 @@
 [project]
-name = "secure-lens"
+name = "securelens"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -8,6 +8,7 @@ dependencies = [
     "pydantic>=2.13.5",
     "rich>=15.0.0",
     "typer>=0.27.2",
+    "typesafe-sdk>=0.7.2",
 ]
 
 [dependency-groups]
@@ -26,3 +27,10 @@ select = [
     "B",
     "UP",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+securelens = "securelens.cli:app"

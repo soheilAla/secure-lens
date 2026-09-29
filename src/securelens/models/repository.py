@@ -8,5 +8,5 @@ class FileTarget(BaseModel):
 
 class RepositorySnapshot(BaseModel):
     root: str
-    files: list[FileTarget]
+    collected_files: list[FileTarget]
     skipped_files: list[str] = Field(default_factory=list)

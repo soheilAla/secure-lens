@@ -1,6 +1,5 @@
 # Python-generated files
 __pycache__/
-.ruff_cache/
 *.py[oc]
 build/
 dist/
@@ -8,4 +7,18 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
+.venv/
+
+# Environment variables
+.env
+
+# Editor directories and files
+.vscode/
+.zed/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
