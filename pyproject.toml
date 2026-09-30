@@ -19,14 +19,7 @@ dev = [
 ]
 
 [tool.ruff.lint]
-select = [
-    "E",
-    "W",
-    "F",
-    "I",
-    "B",
-    "UP",
-]
+select = ["E", "W", "F", "I", "B", "UP"]
 
 [build-system]
 requires = ["hatchling"]
