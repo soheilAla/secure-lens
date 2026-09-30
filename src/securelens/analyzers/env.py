@@ -57,7 +57,7 @@ class EnvAnalyzer:
 
             key, value = parsed
 
-            if key == "DEBUG" and value.lower() in DEBUG_TRUE_VALUES:
+            if key.lower() == "debug" and value.lower() in DEBUG_TRUE_VALUES:
                 findings.append(self._debug_finding(path, line_number, key, value))
 
             if (
@@ -97,7 +97,7 @@ class EnvAnalyzer:
         self, path: str, line_number: int, key: str, value: str
     ) -> Finding:
         return Finding(
-            category=RiskCategory.CONFIGURATION,
+            category=RiskCategory.HARDCODED_CREDENTIAL,
             title=f"Potential hardcoded secret: {key}",
             description=(
                 f"{key} in {path} (line {line_number}) looks like a hardcoded credential. "

@@ -21,7 +21,7 @@ class ScanRunner:
 
         return Report(
             target=snapshot.root,
-            files_scanned=len(snapshot.collected_files),
+            files_collected=len(snapshot.collected_files),
             files_skipped=len(snapshot.skipped_files),
             assessed_findings=assessed,
         )

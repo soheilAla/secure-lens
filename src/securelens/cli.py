@@ -1,6 +1,7 @@
 import typer
 
 from securelens.analyzers.env import EnvAnalyzer
+from securelens.analyzers.secrets import SecretAnalyzer
 from securelens.collectors.repository import RepositoryCollector
 from securelens.core.runner import ScanRunner
 
@@ -14,7 +15,9 @@ def main():
 
 @app.command()
 def scan(path: str):
-    runner = ScanRunner(collector=RepositoryCollector(), analyzers=[EnvAnalyzer()])
+    runner = ScanRunner(
+        collector=RepositoryCollector(), analyzers=[EnvAnalyzer(), SecretAnalyzer()]
+    )
     report = runner.run(path)
 
     typer.echo(f"Scanning: {report.target}")
