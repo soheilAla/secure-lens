@@ -1,12 +1,12 @@
 from collections.abc import Sequence
-from typing import Any
 
+from securelens.analyzers.base import Analyzer
 from securelens.collectors.repository import RepositoryCollector
 from securelens.models.report import AssessedFinding, Report
 
 
 class ScanRunner:
-    def __init__(self, collector: RepositoryCollector, analyzers: Sequence[Any]):
+    def __init__(self, collector: RepositoryCollector, analyzers: Sequence[Analyzer]):
         self.collector = collector
         self.analyzers = analyzers
 
