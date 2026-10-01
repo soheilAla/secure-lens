@@ -2,13 +2,15 @@ import re
 import tomllib
 from importlib import resources
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from securelens.masking import mask_secret
 from securelens.models.enums import RiskCategory, Severity
 from securelens.models.evidence import Evidence
 from securelens.models.finding import Finding
 from securelens.models.repository import RepositorySnapshot
+
+SECRET_PATTERNS_PATH = "analyzers/data/secret_patterns.toml"
 
 
 class SecretPattern(BaseModel):
@@ -18,16 +20,14 @@ class SecretPattern(BaseModel):
     regex: str
     severity: Severity = Severity.HIGH
     category: RiskCategory = RiskCategory.HARDCODED_CREDENTIAL
-    samples: dict[str, list[str]] = {}
+    samples: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class SecretAnalyzer:
     name = "secret-scanner"
 
     def __init__(self):
-        raw = resources.files("securelens.analyzers").joinpath(
-            "data/secret_patterns.toml"
-        )
+        raw = resources.files("securelens").joinpath(*SECRET_PATTERNS_PATH.split("/"))
 
         entries = [
             SecretPattern.model_validate(e)
@@ -41,16 +41,22 @@ class SecretAnalyzer:
 
     def analyze(self, snapshot: RepositorySnapshot) -> list[Finding]:
         findings: list[Finding] = []
+
         for file in snapshot.collected_files:
+            if file.path.endswith("/" + SECRET_PATTERNS_PATH):
+                continue
+
             for line_number, line in enumerate(file.content.splitlines(), start=1):
                 for entry, rx in self._compiled:
                     match = rx.search(line)
+
                     if match:
                         findings.append(
                             self._finding(
                                 entry, file.path, line_number, line, match.span()
                             )
                         )
+
         return findings
 
     def _finding(
