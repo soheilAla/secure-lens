@@ -36,6 +36,9 @@ def scan(path: str):
             f"  [{item.final_severity.value.upper()}] {location} — {finding.title}"
         )
 
+        for evidence in finding.evidence:
+            typer.echo(f"       {evidence.content}")
+
 
 if __name__ == "__main__":
     app()
