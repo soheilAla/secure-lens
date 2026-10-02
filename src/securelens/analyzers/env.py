@@ -42,30 +42,27 @@ class EnvAnalyzer:
             if PurePath(file.path).name not in ENV_FILENAMES:
                 continue
 
-            findings.extend(self._analyze_file(file.path, file.content))
+            for line_number, line in enumerate(file.content.splitlines(), start=1):
+                parsed = self._parse_assignment(line)
 
-        return findings
+                if parsed is None:
+                    continue
 
-    def _analyze_file(self, path: str, content: str) -> list[Finding]:
-        findings: list[Finding] = []
+                key, value = parsed
 
-        for line_number, line in enumerate(content.splitlines(), start=1):
-            parsed = self._parse_assignment(line)
+                if key.lower() == "debug" and value.lower() in DEBUG_TRUE_VALUES:
+                    findings.append(
+                        self._debug_finding(file.path, line_number, key, value)
+                    )
 
-            if parsed is None:
-                continue
-
-            key, value = parsed
-
-            if key.lower() == "debug" and value.lower() in DEBUG_TRUE_VALUES:
-                findings.append(self._debug_finding(path, line_number, key, value))
-
-            if (
-                SECRET_KEY_PATTERN.search(key)
-                and len(value) >= 8
-                and not self._is_template_value(value)
-            ):
-                findings.append(self._secret_finding(path, line_number, key, value))
+                if (
+                    SECRET_KEY_PATTERN.search(key)
+                    and len(value) >= 8
+                    and not self._is_template_value(value)
+                ):
+                    findings.append(
+                        self._secret_finding(file.path, line_number, key, value)
+                    )
 
         return findings
 
@@ -100,7 +97,8 @@ class EnvAnalyzer:
             category=RiskCategory.HARDCODED_CREDENTIAL,
             title=f"Potential hardcoded secret: {key}",
             description=(
-                f"{key} in {path} (line {line_number}) looks like a hardcoded credential. "
+                f"{key} in {path} (line {line_number}) "
+                "looks like a hardcoded credential. "
                 "If this file is committed or shared, the value must be rotated."
             ),
             severity=self._credential_severity(value),
