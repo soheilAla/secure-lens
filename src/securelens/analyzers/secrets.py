@@ -4,11 +4,11 @@ from importlib import resources
 
 from pydantic import BaseModel, Field
 
-from securelens.masking import mask_secret
 from securelens.models.enums import RiskCategory, Severity
 from securelens.models.evidence import Evidence
 from securelens.models.finding import Finding
 from securelens.models.repository import RepositorySnapshot
+from securelens.utils.masking import mask_secret
 
 SECRET_PATTERNS_PATH = "analyzers/data/secret_patterns.toml"
 

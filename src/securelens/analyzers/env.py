@@ -1,12 +1,12 @@
 import re
 from pathlib import PurePath
 
-from securelens.entropy import shannon_entropy
-from securelens.masking import mask_secret
 from securelens.models.enums import RiskCategory, Severity
 from securelens.models.evidence import Evidence
 from securelens.models.finding import Finding
 from securelens.models.repository import RepositorySnapshot
+from securelens.utils.entropy import shannon_entropy
+from securelens.utils.masking import mask_secret
 
 ENV_FILENAMES = {
     ".env",
