@@ -21,6 +21,9 @@ dev = [
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

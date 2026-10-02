@@ -91,3 +91,7 @@ class SecretAnalyzer:
                 )
             ],
         )
+
+    @property
+    def patterns(self) -> list[SecretPattern]:
+        return [entry for entry, _ in self._compiled]
