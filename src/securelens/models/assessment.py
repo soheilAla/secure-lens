@@ -16,4 +16,9 @@ class Assessment(BaseModel):
     exploitable: bool
     exploitable_probability: float
 
+    fallback: bool = False
+    reason: str = ""
+    recommendation: str = ""
+
+    source: str = "jev"
     model_id: str = "jev-latest"

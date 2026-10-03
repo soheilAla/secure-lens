@@ -11,6 +11,7 @@ class RiskCategory(StrEnum):
 
 
 class Severity(StrEnum):
+    INFORMATIONAL = "informational"
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
