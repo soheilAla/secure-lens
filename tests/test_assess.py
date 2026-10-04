@@ -1,3 +1,5 @@
+from typesafe_sdk import Choice
+
 from securelens.assess.base import Assessor
 from securelens.assess.jev import JevAssessor
 from securelens.models.assessment import Assessment
@@ -44,3 +46,26 @@ def test_assessor_protocol():
     assessor = JevAssessor(model="test-model", api_key="test-key")
     assert isinstance(assessor, Assessor)
     assert assessor.name == "jev"
+
+
+def test_secret_finding_questions():
+    from securelens.models.finding import Finding
+
+    assessor = JevAssessor(model="test-model", api_key="test-key")
+    secret_finding = Finding(
+        category=RiskCategory.HARDCODED_CREDENTIAL,
+        title="Potential secret: Stripe API key",
+        description="Stripe secret key in code",
+        severity=Severity.HIGH,
+        file="src/billing.py",
+        line_start=10,
+        line_end=10,
+    )
+    questions = assessor._build_questions(secret_finding)
+    assert "severity" in questions
+    assert "category" in questions
+    assert "exploitable" in questions
+    cat = questions["category"]
+    assert isinstance(cat, Choice)
+    assert "secret" in str(cat.instructions).lower()
+    assert "hardcoded_credential" in (cat.criteria or {})
