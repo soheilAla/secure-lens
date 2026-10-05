@@ -39,6 +39,7 @@ def test_map_category():
         == RiskCategory.HARDCODED_CREDENTIAL
     )
     assert JevAssessor._map_category("configuration") == RiskCategory.CONFIGURATION
+    assert JevAssessor._map_category("docker") == RiskCategory.DOCKER
     assert JevAssessor._map_category("unknown") == RiskCategory.OTHER
 
 
@@ -69,3 +70,26 @@ def test_secret_finding_questions():
     assert isinstance(cat, Choice)
     assert "secret" in str(cat.instructions).lower()
     assert "hardcoded_credential" in (cat.criteria or {})
+
+
+def test_docker_finding_questions():
+    from securelens.models.finding import Finding
+
+    assessor = JevAssessor(model="test-model", api_key="test-key")
+    docker_finding = Finding(
+        category=RiskCategory.DOCKER,
+        title="Container runs as root user",
+        description="Explicit USER root in Dockerfile",
+        severity=Severity.HIGH,
+        file="Dockerfile",
+        line_start=3,
+        line_end=3,
+    )
+    questions = assessor._build_questions(docker_finding)
+    assert "severity" in questions
+    assert "category" in questions
+    assert "exploitable" in questions
+    cat = questions["category"]
+    assert isinstance(cat, Choice)
+    assert "container" in str(cat.instructions).lower()
+    assert "docker" in (cat.criteria or {})

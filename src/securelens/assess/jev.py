@@ -46,6 +46,19 @@ class JevAssessor:
                 "Revoke and rotate exposed credential immediately. "
                 "Store secrets in environment variables or a secret vault."
             )
+        elif finding.category == RiskCategory.DOCKER:
+            reason = (
+                f"Dockerfile security issue detected in {finding.file or 'codebase'}."
+            )
+            recommendation = (
+                "Remediate Dockerfile instruction to enforce least privilege, "
+                "pin dependencies/images, and avoid untrusted execution."
+            )
+        elif finding.category == RiskCategory.CONFIGURATION:
+            reason = f"Insecure configuration detected in {finding.file or 'codebase'}."
+            recommendation = (
+                "Update environment or application settings to enforce secure defaults."
+            )
         else:
             reason = f"Security issue detected in {finding.file or 'codebase'}."
             recommendation = (
@@ -119,6 +132,62 @@ class JevAssessor:
                 ),
             }
 
+        if finding.category == RiskCategory.DOCKER:
+            return {
+                "severity": Score(
+                    instructions=(
+                        "Assess the severity of this container security finding "
+                        "in context, considering privilege escalation, image "
+                        "immutability, cache integrity, and network exposure."
+                    ),
+                    criteria=[
+                        "informational",
+                        "low",
+                        "medium",
+                        "high",
+                        "critical",
+                    ],
+                ),
+                "category": Choice(
+                    instructions=(
+                        "Classify the risk category of this container finding."
+                    ),
+                    criteria={
+                        "docker": (
+                            "A container image build, privilege, layer, or "
+                            "package configuration issue."
+                        ),
+                        "configuration": (
+                            "A general application or environment setting issue."
+                        ),
+                        "hardcoded_credential": (
+                            "A credential, secret, or key exposed in build "
+                            "instructions."
+                        ),
+                        "other": "Not a container issue or fits another category.",
+                    },
+                ),
+                "exploitable": Noul(
+                    instructions=(
+                        "Determine whether this container misconfiguration presents "
+                        "an active, exploitable risk in runtime or production (such "
+                        "as container breakout, supply chain tampering, or direct "
+                        "exposure) rather than a build-time optimization or "
+                        "stylistic issue."
+                    ),
+                    criteria={
+                        "true": (
+                            "Presents direct security risk, container breakout path, "
+                            "untrusted execution, or sensitive port exposure."
+                        ),
+                        "false": (
+                            "A build optimization, cleanup recommendation, or "
+                            "low-risk non-exploitable setting."
+                        ),
+                    },
+                ),
+            }
+
         return {
             "severity": Score(
                 instructions=(
@@ -135,6 +204,7 @@ class JevAssessor:
             "category": Choice(
                 instructions="Classify the primary risk category of this finding.",
                 criteria={
+                    "docker": ("A container image build, privilege, or layer issue."),
                     "configuration": (
                         "An insecure application or environment configuration."
                     ),
@@ -177,5 +247,8 @@ class JevAssessor:
 
         if category == "configuration":
             return RiskCategory.CONFIGURATION
+
+        if category == "docker":
+            return RiskCategory.DOCKER
 
         return RiskCategory.OTHER
