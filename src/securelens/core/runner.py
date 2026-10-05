@@ -1,21 +1,28 @@
 from collections.abc import Sequence
 
 from securelens.analyzers.base import Analyzer
+from securelens.analyzers.dockerfile import DockerfileAnalyzer
+from securelens.analyzers.env import EnvAnalyzer
+from securelens.analyzers.secrets import SecretAnalyzer
 from securelens.assess.base import Assessor
 from securelens.collectors.repository import RepositoryCollector
 from securelens.models.assessment import Assessment
 from securelens.models.report import AssessedFinding, Report
 
 
+def default_analyzers() -> list[Analyzer]:
+    return [EnvAnalyzer(), SecretAnalyzer(), DockerfileAnalyzer()]
+
+
 class ScanRunner:
     def __init__(
         self,
         collector: RepositoryCollector,
-        analyzers: Sequence[Analyzer],
+        analyzers: Sequence[Analyzer] | None = None,
         assessor: Assessor | None = None,
     ):
         self.collector = collector
-        self.analyzers = analyzers
+        self.analyzers = analyzers if analyzers is not None else default_analyzers()
         self.assessor = assessor
 
     def run(self, target: str) -> Report:

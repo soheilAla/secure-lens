@@ -1,5 +1,6 @@
 import typer
 
+from securelens.analyzers.dockerfile import DockerfileAnalyzer
 from securelens.analyzers.env import EnvAnalyzer
 from securelens.analyzers.secrets import SecretAnalyzer
 from securelens.assess.jev import JevAssessor
@@ -39,7 +40,7 @@ def scan(
 
     runner = ScanRunner(
         collector=RepositoryCollector(),
-        analyzers=[EnvAnalyzer(), SecretAnalyzer()],
+        analyzers=[EnvAnalyzer(), SecretAnalyzer(), DockerfileAnalyzer()],
         assessor=assessor,
     )
     report = runner.run(path)
