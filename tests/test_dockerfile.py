@@ -38,23 +38,29 @@ def test_safe_user_ignored():
 def test_unpinned_base_image():
     findings = findings_for("FROM python:latest\n")
     assert len(findings) == 1
-    assert findings[0].severity == Severity.MEDIUM
-    assert "latest" in findings[0].title.lower()
+    assert findings[0].severity == Severity.LOW
+    assert "mutable tag" in findings[0].title.lower()
 
     findings_no_tag = findings_for("FROM python\n")
     assert len(findings_no_tag) == 1
-    assert findings_no_tag[0].severity == Severity.MEDIUM
-    assert "missing version tag" in findings_no_tag[0].title.lower()
+    assert findings_no_tag[0].severity == Severity.LOW
+    assert "untagged base image" in findings_no_tag[0].title.lower()
 
 
 def test_pinned_base_image_ignored():
     cases = [
+        "FROM python:3.14\n",
         "FROM python:3.11\n",
         "FROM python:3.11-slim\n",
         (
             "FROM python@sha256:"
             "7176cb4053be4112ef0d3bf192ef94df9f8b4d0bc88e0db43d41ab0a60ff94b3\n"
         ),
+        (
+            "FROM python:latest@sha256:"
+            "7176cb4053be4112ef0d3bf192ef94df9f8b4d0bc88e0db43d41ab0a60ff94b3\n"
+        ),
+        "FROM localhost:5000/myimage:3.14\n",
         "FROM scratch\n",
         "FROM ${BASE_IMAGE}\n",
     ]
@@ -113,12 +119,12 @@ def test_pipe_to_non_shell_ignored():
 
 def test_risky_expose_ports():
     cases = [
-        ("EXPOSE 22", Severity.HIGH, "SSH"),
-        ("EXPOSE 22/tcp", Severity.HIGH, "SSH"),
-        ("EXPOSE 2375", Severity.CRITICAL, "Docker daemon"),
-        ("EXPOSE 2376", Severity.HIGH, "Docker daemon"),
-        ("EXPOSE 23", Severity.HIGH, "Telnet"),
-        ("EXPOSE 3389", Severity.HIGH, "RDP"),
+        ("EXPOSE 22", Severity.LOW, "SSH"),
+        ("EXPOSE 22/tcp", Severity.LOW, "SSH"),
+        ("EXPOSE 2375", Severity.LOW, "Docker daemon"),
+        ("EXPOSE 2376", Severity.LOW, "Docker daemon"),
+        ("EXPOSE 23", Severity.LOW, "Telnet"),
+        ("EXPOSE 3389", Severity.LOW, "RDP"),
     ]
     for expose_line, expected_sev, expected_svc in cases:
         findings = findings_for(f"FROM alpine:3.18\n{expose_line}\n")
@@ -150,7 +156,6 @@ def test_apt_install_issues():
     assert any("non-interactive" in t for t in titles)
     assert any("cache cleanup" in t for t in titles)
 
-    # Clean install
     clean = (
         "FROM debian:12\n"
         "RUN apt-get update && apt-get install -y --no-install-recommends curl && "
@@ -164,7 +169,7 @@ def test_copy_all_without_dockerignore():
     findings = findings_for("FROM python:3.11\nCOPY . /app\n")
     copy_findings = [f for f in findings if "without .dockerignore" in f.title.lower()]
     assert len(copy_findings) == 1
-    assert copy_findings[0].severity == Severity.HIGH
+    assert copy_findings[0].severity == Severity.LOW
 
 
 def test_copy_all_with_dockerignore():
@@ -173,7 +178,7 @@ def test_copy_all_with_dockerignore():
     )
     copy_findings = [f for f in findings if "broad copy" in f.title.lower()]
     assert len(copy_findings) == 1
-    assert copy_findings[0].severity == Severity.LOW
+    assert copy_findings[0].severity == Severity.INFORMATIONAL
 
 
 def test_copy_targeted_or_stage_ignored():
@@ -229,4 +234,4 @@ def test_non_dockerfiles_skipped():
     assert len(findings_for("USER root\nEXPOSE 22\n", path="README.md")) == 0
     assert (
         len(findings_for("USER root\nEXPOSE 22\n", path="Dockerfile")) == 0
-    )  # no FROM
+    )

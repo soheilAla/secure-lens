@@ -10,11 +10,22 @@ from securelens.models.finding import Finding
 from securelens.models.repository import RepositorySnapshot
 
 RISKY_PORTS: dict[str, tuple[str, Severity]] = {
-    "22": ("SSH", Severity.HIGH),
-    "23": ("Telnet", Severity.HIGH),
-    "2375": ("Docker daemon (unencrypted)", Severity.CRITICAL),
-    "2376": ("Docker daemon (TLS)", Severity.HIGH),
-    "3389": ("RDP", Severity.HIGH),
+    "22": ("SSH", Severity.LOW),
+    "23": ("Telnet", Severity.LOW),
+    "2375": ("Docker daemon (unencrypted)", Severity.LOW),
+    "2376": ("Docker daemon (TLS)", Severity.LOW),
+    "3389": ("RDP", Severity.LOW),
+}
+
+MUTABLE_BASE_TAGS: set[str] = {
+    "latest",
+    "edge",
+    "nightly",
+    "canary",
+    "master",
+    "main",
+    "dev",
+    "devel",
 }
 
 PIPE_SHELL_PATTERN = re.compile(
@@ -244,37 +255,40 @@ class DockerfileAnalyzer:
             return None
         if image.lower() == "scratch" or image.lower() in known_stages:
             return None
-        if "@sha256:" in image or "@sha512:" in image:
+
+        # Any digest reference (image@sha256:... or image:tag@sha256:...) is pinned.
+        if "@" in image:
             return None
 
-        image_no_digest = image.split("@")[0]
-        last_segment = image_no_digest.split("/")[-1]
+        # Isolate image name part from registry prefix (e.g. registry:5000/image:tag)
+        image_name_part = image.split("/")[-1]
 
-        if ":" not in last_segment:
+        if ":" not in image_name_part:
             return self._finding(
                 path=path,
                 inst=inst,
-                severity=Severity.MEDIUM,
-                title="Unpinned base image missing version tag",
+                severity=Severity.LOW,
+                title="Untagged base image (defaults to latest)",
                 description=(
-                    f"Base image '{image}' does not specify a version tag and defaults "
-                    "to mutable ':latest'. Pin to an exact tag or SHA256 digest."
+                    f"Base image '{image}' specifies no tag and defaults "
+                    "to mutable 'latest'. Pin to an exact version tag or SHA256 digest."
                 ),
             )
 
-        tag = last_segment.split(":")[-1]
-        if tag.lower() == "latest":
+        tag = image_name_part.rsplit(":", 1)[-1]
+        if tag.lower() in MUTABLE_BASE_TAGS:
             return self._finding(
                 path=path,
                 inst=inst,
-                severity=Severity.MEDIUM,
-                title="Mutable ':latest' tag in base image",
+                severity=Severity.LOW,
+                title=f"Mutable tag used in base image: ':{tag}'",
                 description=(
-                    f"Base image '{image}' uses mutable ':latest' tag. "
+                    f"Base image '{image}' uses mutable tag ':{tag}'. "
                     "Pin to an exact tag or SHA256 digest for reproducible builds."
                 ),
             )
 
+        # Versioned tag (e.g. :3.14, :3.14-slim, :v1.2.0, :alpine3.18) -> safe
         return None
 
     def _check_remote_add(self, path: str, inst: DockerInstruction) -> Finding | None:
@@ -307,7 +321,10 @@ class DockerfileAnalyzer:
         for port in ports:
             if port in RISKY_PORTS:
                 service, severity = RISKY_PORTS[port]
-                title = f"Risky port exposed in container: {service} (port {port})"
+                title = (
+                    f"Sensitive port declared in EXPOSE metadata: "
+                    f"{service} (port {port})"
+                )
                 findings.append(
                     self._finding(
                         path=path,
@@ -315,8 +332,9 @@ class DockerfileAnalyzer:
                         severity=severity,
                         title=title,
                         description=(
-                            f"Container exposes sensitive port {port} ({service}). "
-                            "Avoid running administrative daemons inside images."
+                            f"Container metadata declares port {port} ({service}). "
+                            "EXPOSE is advisory and does not publish ports, "
+                            "but indicates an administrative daemon may run."
                         ),
                     )
                 )
@@ -404,8 +422,8 @@ class DockerfileAnalyzer:
             return self._finding(
                 path=path,
                 inst=inst,
-                severity=Severity.HIGH,
-                title="Unrestricted COPY of build context without .dockerignore",
+                severity=Severity.LOW,
+                title="Build context copy without .dockerignore",
                 description=(
                     "COPY instruction copies entire working directory into the "
                     "image without a .dockerignore file. Sensitive files like "
@@ -416,7 +434,7 @@ class DockerfileAnalyzer:
         return self._finding(
             path=path,
             inst=inst,
-            severity=Severity.LOW,
+            severity=Severity.INFORMATIONAL,
             title="Broad COPY of entire build context",
             description=(
                 "Copying entire context root ('.') may include unnecessary "
