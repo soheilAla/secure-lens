@@ -88,6 +88,7 @@ class SecretAnalyzer:
                     content=masked.strip(),
                     line_start=line_number,
                     line_end=line_number,
+                    context=f"Pattern: {entry.name} ({entry.provider})",
                 )
             ],
         )

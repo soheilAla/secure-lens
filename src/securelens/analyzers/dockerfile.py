@@ -256,11 +256,9 @@ class DockerfileAnalyzer:
         if image.lower() == "scratch" or image.lower() in known_stages:
             return None
 
-        # Any digest reference (image@sha256:... or image:tag@sha256:...) is pinned.
         if "@" in image:
             return None
 
-        # Isolate image name part from registry prefix (e.g. registry:5000/image:tag)
         image_name_part = image.split("/")[-1]
 
         if ":" not in image_name_part:
@@ -288,7 +286,6 @@ class DockerfileAnalyzer:
                 ),
             )
 
-        # Versioned tag (e.g. :3.14, :3.14-slim, :v1.2.0, :alpine3.18) -> safe
         return None
 
     def _check_remote_add(self, path: str, inst: DockerInstruction) -> Finding | None:
@@ -464,6 +461,7 @@ class DockerfileAnalyzer:
                     content=inst.raw.strip(),
                     line_start=inst.line_start,
                     line_end=inst.line_end,
+                    context=f"Instruction: {inst.instruction}",
                 )
             ],
         )

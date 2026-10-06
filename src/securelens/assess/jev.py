@@ -1,8 +1,21 @@
-from typesafe_sdk import Choice, Noul, Question, Score, TypeSafeClient
+from __future__ import annotations
+
+from pathlib import PurePath
+from typing import Any
+
+from typesafe_sdk import Noul, Question, Score, TypeSafeClient
 
 from securelens.models.assessment import Assessment
 from securelens.models.enums import RiskCategory, Severity
 from securelens.models.finding import Finding
+
+SEVERITY_LEVELS: dict[Severity, int] = {
+    Severity.INFORMATIONAL: 0,
+    Severity.LOW: 1,
+    Severity.MEDIUM: 2,
+    Severity.HIGH: 3,
+    Severity.CRITICAL: 4,
+}
 
 
 class JevAssessor:
@@ -26,71 +39,100 @@ class JevAssessor:
             base_url=base_url or None,
         )
 
-    # ponytail: single-finding assessment; add batch evaluation when repo scan scales.
     def assess(self, finding: Finding) -> Assessment:
-        questions = self._build_questions(finding)
-        response = self._client.system_one(
-            state={
-                "finding": finding.model_dump(mode="json"),
-            },
-            questions=questions,
+        try:
+            state = self._build_state(finding)
+            questions = self._build_questions(finding)
+            response = self._client.system_one(
+                state=state,
+                questions=questions,
+            )
+        except Exception as err:
+            return self._fallback_assessment(
+                finding, f"Assessment request failed: {err}"
+            )
+
+        if not self._is_valid_response(response):
+            return self._fallback_assessment(
+                finding, "Invalid response payload from model."
+            )
+
+        severity_answer = response.scores["severity"]
+        exploitable_answer = response.nouls["exploitable"]
+        conf = severity_answer.confidence
+
+        if conf < 0.40:
+            return self._fallback_assessment(
+                finding,
+                (
+                    f"Low model confidence ({conf:.2f} < 0.40); "
+                    f"preserved preliminary severity."
+                ),
+            )
+
+        candidate_severity = self._map_severity(severity_answer.score)
+        is_upgrade = SEVERITY_LEVELS.get(candidate_severity, 0) > SEVERITY_LEVELS.get(
+            finding.severity, 0
         )
 
-        severity = response.scores["severity"]
-        category = response.choices["category"]
-        exploitable = response.nouls["exploitable"]
+        final_severity = (
+            finding.severity if (is_upgrade and conf < 0.70) else candidate_severity
+        )
+        is_exploitable = exploitable_answer.noul >= 0.5
 
-        if finding.category == RiskCategory.HARDCODED_CREDENTIAL:
-            reason = f"Credential pattern detected in {finding.file or 'codebase'}."
-            recommendation = (
-                "Revoke and rotate exposed credential immediately. "
-                "Store secrets in environment variables or a secret vault."
-            )
-        elif finding.category == RiskCategory.DOCKER:
-            reason = (
-                f"Dockerfile security issue detected in {finding.file or 'codebase'}."
-            )
-            recommendation = (
-                "Remediate Dockerfile instruction to enforce least privilege, "
-                "pin dependencies/images, and avoid untrusted execution."
-            )
-        elif finding.category == RiskCategory.CONFIGURATION:
-            reason = f"Insecure configuration detected in {finding.file or 'codebase'}."
-            recommendation = (
-                "Update environment or application settings to enforce secure defaults."
-            )
-        else:
-            reason = f"Security issue detected in {finding.file or 'codebase'}."
-            recommendation = (
-                "Review and remediate finding according to security policy."
-            )
+        reason, recommendation = self._generate_verdict(
+            finding=finding,
+            final_severity=final_severity,
+            exploitable=is_exploitable,
+        )
+
+        probabilities = {
+            str(severity_answer.legend.get(k, k)): prob
+            for k, prob in severity_answer.probabilities.items()
+        }
 
         return Assessment(
-            severity=self._map_severity(severity.score),
-            severity_score=severity.score,
-            severity_probabilities={
-                str(severity.legend.get(k, k)): prob
-                for k, prob in severity.probabilities.items()
-            },
-            severity_confidence=severity.confidence,
-            category=self._map_category(category.choice),
-            category_probabilities=category.probabilities,
-            category_confidence=category.confidence,
-            exploitable=exploitable.noul >= 0.5,
-            exploitable_probability=exploitable.noul,
+            severity=final_severity,
+            severity_score=severity_answer.score,
+            severity_probabilities=probabilities,
+            severity_confidence=conf,
+            category=finding.category,
+            category_probabilities={finding.category.value: 1.0},
+            category_confidence=1.0,
+            exploitable=is_exploitable,
+            exploitable_probability=exploitable_answer.noul,
             reason=reason,
             recommendation=recommendation,
-            source="jev",
+            source=self.name,
             model_id=self._model,
         )
+
+    @staticmethod
+    def _build_state(finding: Finding) -> dict[str, Any]:
+        target_file = finding.file or ""
+        is_test = (
+            PurePath(target_file).parts[:1] == ("tests",) if target_file else False
+        )
+        return {
+            "file": target_file,
+            "is_test": is_test,
+            "evidence": [
+                {
+                    "line": ev.line_start or 0,
+                    "code": ev.content,
+                    "context": ev.context or "",
+                }
+                for ev in finding.evidence
+            ],
+        }
 
     def _build_questions(self, finding: Finding) -> dict[str, Question]:
         if finding.category == RiskCategory.HARDCODED_CREDENTIAL:
             return {
                 "severity": Score(
                     instructions=(
-                        "Assess the severity of this exposed credential in context, "
-                        "considering provider type, file location, and impact."
+                        "Assess credential severity based on secret sensitivity, "
+                        "provider, and whether file is in tests vs production."
                     ),
                     criteria=[
                         "informational",
@@ -100,33 +142,18 @@ class JevAssessor:
                         "critical",
                     ],
                 ),
-                "category": Choice(
-                    instructions="Classify the risk category of this secret finding.",
-                    criteria={
-                        "hardcoded_credential": (
-                            "A secret, token, API key, password, or private key"
-                            " is exposed."
-                        ),
-                        "configuration": (
-                            "An insecure configuration or environment setting."
-                        ),
-                        "other": "Not a credential or fits another category.",
-                    },
-                ),
                 "exploitable": Noul(
                     instructions=(
-                        "Determine whether this exposed secret appears to be a real, "
-                        "exploitable credential rather than a test dummy, mock, "
-                        "example, or placeholder."
+                        "Is this credential functional and exploitable in an "
+                        "active environment rather than a mock or test fixture?"
                     ),
                     criteria={
                         "true": (
-                            "A real, valid credential format in non-test or"
-                            " deployable code that could grant unauthorized access."
+                            "Functional credential in deployable code or "
+                            "production file."
                         ),
                         "false": (
-                            "A dummy token, synthetic fixture, documentation example,"
-                            " or obvious placeholder."
+                            "Test fixture, documentation sample, or mock placeholder."
                         ),
                     },
                 ),
@@ -136,9 +163,8 @@ class JevAssessor:
             return {
                 "severity": Score(
                     instructions=(
-                        "Assess the severity of this container security finding "
-                        "in context, considering privilege escalation, image "
-                        "immutability, cache integrity, and network exposure."
+                        "Assess container severity based on privilege escalation, "
+                        "attack surface, and deployment risk."
                     ),
                     criteria=[
                         "informational",
@@ -148,41 +174,17 @@ class JevAssessor:
                         "critical",
                     ],
                 ),
-                "category": Choice(
-                    instructions=(
-                        "Classify the risk category of this container finding."
-                    ),
-                    criteria={
-                        "docker": (
-                            "A container image build, privilege, layer, or "
-                            "package configuration issue."
-                        ),
-                        "configuration": (
-                            "A general application or environment setting issue."
-                        ),
-                        "hardcoded_credential": (
-                            "A credential, secret, or key exposed in build "
-                            "instructions."
-                        ),
-                        "other": "Not a container issue or fits another category.",
-                    },
-                ),
                 "exploitable": Noul(
                     instructions=(
-                        "Determine whether this container misconfiguration presents "
-                        "an active, exploitable risk in runtime or production (such "
-                        "as container breakout, supply chain tampering, or direct "
-                        "exposure) rather than a build-time optimization or "
-                        "stylistic issue."
+                        "Does this container instruction create a direct runtime "
+                        "attack surface rather than build optimization?"
                     ),
                     criteria={
                         "true": (
-                            "Presents direct security risk, container breakout path, "
-                            "untrusted execution, or sensitive port exposure."
+                            "Direct runtime attack surface or unverified execution."
                         ),
                         "false": (
-                            "A build optimization, cleanup recommendation, or "
-                            "low-risk non-exploitable setting."
+                            "Build optimization, caching issue, or advisory metadata."
                         ),
                     },
                 ),
@@ -191,7 +193,8 @@ class JevAssessor:
         return {
             "severity": Score(
                 instructions=(
-                    "Assess the severity of this security finding in context."
+                    "Assess configuration severity based on exposure and "
+                    "information leakage risk in deployment."
                 ),
                 criteria=[
                     "informational",
@@ -201,32 +204,83 @@ class JevAssessor:
                     "critical",
                 ],
             ),
-            "category": Choice(
-                instructions="Classify the primary risk category of this finding.",
-                criteria={
-                    "docker": ("A container image build, privilege, or layer issue."),
-                    "configuration": (
-                        "An insecure application or environment configuration."
-                    ),
-                    "hardcoded_credential": (
-                        "A secret, credential, or authentication material is exposed."
-                    ),
-                    "other": "The finding does not fit the listed categories.",
-                },
-            ),
             "exploitable": Noul(
                 instructions=(
-                    "Determine whether this finding is exploitable as-is "
-                    "by an attacker with repository access."
+                    "Does this setting expose internal application details "
+                    "in a live deployment rather than local development?"
                 ),
                 criteria={
-                    "true": (
-                        "The finding can be used as-is without additional conditions."
-                    ),
-                    "false": ("Exploitation requires additional conditions or access."),
+                    "true": "Exposes internal state or debug interfaces in deployment.",
+                    "false": "Harmless local setting or non-production configuration.",
                 },
             ),
         }
+
+    @staticmethod
+    def _is_valid_response(response: Any) -> bool:
+        scores = getattr(response, "scores", None)
+        nouls = getattr(response, "nouls", None)
+        if not isinstance(scores, dict) or not isinstance(nouls, dict):
+            return False
+        if "severity" not in scores or "exploitable" not in nouls:
+            return False
+        sev = scores["severity"]
+        exp = nouls["exploitable"]
+        if getattr(sev, "score", None) is None or not isinstance(
+            sev.score, (int, float)
+        ):
+            return False
+        if getattr(exp, "noul", None) is None or not isinstance(exp.noul, (int, float)):
+            return False
+        return True
+
+    def _fallback_assessment(self, finding: Finding, reason: str) -> Assessment:
+        return Assessment(
+            severity=finding.severity,
+            severity_score=0.0,
+            severity_probabilities={},
+            severity_confidence=0.0,
+            category=finding.category,
+            category_probabilities={finding.category.value: 1.0},
+            category_confidence=1.0,
+            exploitable=False,
+            exploitable_probability=0.0,
+            fallback=True,
+            reason=reason,
+            recommendation="Manual review required.",
+            source=self.name,
+            model_id=self._model,
+        )
+
+    @staticmethod
+    def _generate_verdict(
+        finding: Finding,
+        final_severity: Severity,
+        exploitable: bool,
+    ) -> tuple[str, str]:
+        file_name = PurePath(finding.file).name if finding.file else "target"
+        status = "Exploitable" if exploitable else "Non-exploitable"
+        reason = f"{status}: {finding.title} in {file_name}."
+
+        if not exploitable:
+            recommendation = (
+                f"Verify {finding.title.lower()}; non-exploitable in current context."
+            )
+        elif finding.category == RiskCategory.HARDCODED_CREDENTIAL:
+            recommendation = (
+                "Rotate credential and migrate to secrets manager or "
+                "environment variable."
+            )
+        elif finding.category == RiskCategory.DOCKER:
+            recommendation = f"Update Dockerfile to remediate {finding.title.lower()}."
+        elif finding.category == RiskCategory.CONFIGURATION:
+            recommendation = (
+                f"Update configuration to remediate {finding.title.lower()}."
+            )
+        else:
+            recommendation = f"Remediate {finding.title.lower()}."
+
+        return reason, recommendation
 
     @staticmethod
     def _map_severity(score: float) -> Severity:
@@ -239,16 +293,3 @@ class JevAssessor:
         if score >= 0.5:
             return Severity.LOW
         return Severity.INFORMATIONAL
-
-    @staticmethod
-    def _map_category(category: str) -> RiskCategory:
-        if category == "hardcoded_credential":
-            return RiskCategory.HARDCODED_CREDENTIAL
-
-        if category == "configuration":
-            return RiskCategory.CONFIGURATION
-
-        if category == "docker":
-            return RiskCategory.DOCKER
-
-        return RiskCategory.OTHER

@@ -86,6 +86,9 @@ class EnvAnalyzer:
                     content=f"{key}={value}",
                     line_start=line_number,
                     line_end=line_number,
+                    context=(
+                        f"Debug assignment '{key}={value}' in {PurePath(path).name}"
+                    ),
                 )
             ],
         )
@@ -111,6 +114,9 @@ class EnvAnalyzer:
                     content=f"{key}={mask_secret(value)}",
                     line_start=line_number,
                     line_end=line_number,
+                    context=(
+                        f"Secret variable assignment '{key}' in {PurePath(path).name}"
+                    ),
                 )
             ],
         )
