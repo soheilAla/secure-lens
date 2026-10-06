@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from securelens.analyzers.base import Analyzer
 from securelens.analyzers.dockerfile import DockerfileAnalyzer
 from securelens.analyzers.env import EnvAnalyzer
+from securelens.analyzers.git import GitRepositoryAnalyzer
 from securelens.analyzers.secrets import SecretAnalyzer
 from securelens.assess.base import Assessor
 from securelens.collectors.repository import RepositoryCollector
@@ -11,7 +12,12 @@ from securelens.models.report import AssessedFinding, Report
 
 
 def default_analyzers() -> list[Analyzer]:
-    return [EnvAnalyzer(), SecretAnalyzer(), DockerfileAnalyzer()]
+    return [
+        EnvAnalyzer(),
+        SecretAnalyzer(),
+        DockerfileAnalyzer(),
+        GitRepositoryAnalyzer(),
+    ]
 
 
 class ScanRunner:

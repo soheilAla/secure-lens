@@ -58,12 +58,13 @@ class FailingAssessor:
         raise ConnectionError("Service unreachable")
 
 
-def test_runner_default_analyzers_includes_dockerfile():
+def test_runner_default_analyzers():
     runner = ScanRunner(collector=FakeCollector())
     analyzer_names = [a.name for a in runner.analyzers]
     assert "dockerfile" in analyzer_names
     assert "env-rules" in analyzer_names
     assert "secret-scanner" in analyzer_names
+    assert "git-repository" in analyzer_names
 
 
 def test_runner_without_assessor():
