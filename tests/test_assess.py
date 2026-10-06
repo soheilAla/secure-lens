@@ -108,6 +108,30 @@ def test_assess_success_and_verdict_generation():
     assert "Update Dockerfile" in assessment.recommendation
 
 
+def test_assess_git_finding():
+    assessor = JevAssessor(model="test-model", api_key="test-key")
+    assessor._client = FakeClient(MockResponse(score=3.6, conf=0.90, noul=0.95))  # type: ignore[assignment]
+
+    finding = Finding(
+        category=RiskCategory.CONFIGURATION,
+        title="Suspicious command in Git hook: pre-commit",
+        description="curl | sh in hook",
+        severity=Severity.HIGH,
+        file=".husky/pre-commit",
+    )
+
+    questions = assessor._build_questions(finding)
+    sev_q = questions["severity"]
+    assert isinstance(sev_q, Score)
+    assert "Git finding severity" in str(sev_q.instructions)
+
+    assessment = assessor.assess(finding)
+    assert assessment.severity == Severity.CRITICAL
+    assert assessment.exploitable is True
+    assert "pre-commit" in assessment.reason
+    assert "Remove untrusted command execution" in assessment.recommendation
+
+
 def test_conservative_upgrade_and_fallbacks():
     assessor = JevAssessor(model="test-model", api_key="test-key")
     finding = Finding(

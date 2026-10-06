@@ -190,6 +190,39 @@ class JevAssessor:
                 ),
             }
 
+        if self._is_git_finding(finding):
+            return {
+                "severity": Score(
+                    instructions=(
+                        "Assess Git finding severity based on secret exposure, "
+                        "arbitrary hook execution, or submodule injection risk."
+                    ),
+                    criteria=[
+                        "informational",
+                        "low",
+                        "medium",
+                        "high",
+                        "critical",
+                    ],
+                ),
+                "exploitable": Noul(
+                    instructions=(
+                        "Does this Git finding expose active secrets or execute "
+                        "unverified code on git operations?"
+                    ),
+                    criteria={
+                        "true": (
+                            "Active tracked secret, command injection, or "
+                            "malicious hook script."
+                        ),
+                        "false": (
+                            "Advisory notice, missing gitignore, or "
+                            "non-executable setting."
+                        ),
+                    },
+                ),
+            }
+
         return {
             "severity": Score(
                 instructions=(
@@ -274,13 +307,39 @@ class JevAssessor:
         elif finding.category == RiskCategory.DOCKER:
             recommendation = f"Update Dockerfile to remediate {finding.title.lower()}."
         elif finding.category == RiskCategory.CONFIGURATION:
-            recommendation = (
-                f"Update configuration to remediate {finding.title.lower()}."
-            )
+            if JevAssessor._is_git_finding(finding):
+                title_lower = finding.title.lower()
+                if "hook" in title_lower:
+                    recommendation = "Remove untrusted command execution from Git hook."
+                elif "submodule" in title_lower:
+                    recommendation = "Sanitize submodule configuration in .gitmodules."
+                elif "tracked" in title_lower or "gitignore" in title_lower:
+                    recommendation = (
+                        "Untrack sensitive file with 'git rm --cached' and "
+                        "update .gitignore."
+                    )
+                else:
+                    recommendation = (
+                        f"Sanitize Git repository configuration: {finding.title}."
+                    )
+            else:
+                recommendation = (
+                    f"Update configuration to remediate {finding.title.lower()}."
+                )
         else:
             recommendation = f"Remediate {finding.title.lower()}."
 
         return reason, recommendation
+
+    @staticmethod
+    def _is_git_finding(finding: Finding) -> bool:
+        file = (finding.file or "").lower()
+        return (
+            file in (".gitignore", ".gitmodules", ".gitconfig", ".git/config")
+            or file.startswith((".husky/", ".githooks/", "githooks/", ".git-hooks/"))
+            or "git" in finding.title.lower()
+            or "submodule" in finding.title.lower()
+        )
 
     @staticmethod
     def _map_severity(score: float) -> Severity:
